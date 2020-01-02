@@ -1,0 +1,79 @@
+# Required packages
+library(tidyverse)
+library(scales)
+library(lubridate)
+
+# Translations ------------------------------------------------------------
+
+language <- list(
+  en_US = list(
+    locale_lc_time = "en_US.UTF-8",
+    title = bquote("Monthly mean"~CO[2]~"concentration"),
+    caption = paste("Data : P. Tans, NOAA/ESRL (www.esrl.noaa.gov/gmd/ccgg/trends/)\nand R. Keeling, Scripps Institution of Oceanography (scrippsco2.ucsd.edu/). Accessed", Sys.Date()),
+    x = "Year",
+    y = bquote(CO[2]~"fraction in dry air ("*mu*"mol/mol)"),
+    x2 = "Month",
+    y2 = bquote(atop(CO[2]~"fraction in dry air ("*mu*"mol/mol)", "Departure from yearly average")),
+    title2 = "Seasonal variation"
+  ),
+  fr_FR = list(
+    locale_lc_time = "fr_FR.UTF-8",
+    title = bquote("Moyenne mensuelle de la concentration de"~CO[2]),
+    caption = paste("données : P. Tans, NOAA/ESRL (www.esrl.noaa.gov/gmd/ccgg/trends/)\net R. Keeling, Scripps Institution of Oceanography (scrippsco2.ucsd.edu/). Accédé le", Sys.Date()),
+    x = "année",
+    y = bquote("fraction de"~CO[2]~"dans l'air sec ("*mu*"mol/mol)"),
+    x2 = "mois",
+    y2 = bquote(atop("fraction de"~CO[2]~"dans l'air sec ("*mu*"mol/mol)", "en écart à la moyenne annuelle")),
+    title2 = "Variation saisonnière"
+  ))
+
+# Data --------------------------------------------------------------------
+
+# https://www.esrl.noaa.gov/gmd/ccgg/trends/
+co2ml <- read_delim("ftp://aftp.cmdl.noaa.gov/products/trends/co2/co2_mm_mlo.txt",
+                    delim = " ",
+                    locale = locale(decimal_mark = "."),
+                    na = c("-99.99", "-1"),
+                    col_types = "iiddddi",
+                    col_names = c("year", "month", "decimal", "co2", "co2_interpol", "co2_trend", "days"),
+                    comment = "#",
+                    trim_ws = TRUE) %>% 
+  group_by(year) %>% 
+  mutate(year_mean = mean(co2_interpol, na.rm = TRUE),
+         delta = co2_interpol - year_mean,
+         vdate = ymd(paste0("2015-", month, "-01"))) %>% 
+  ungroup()
+  
+  # Polar plot
+for (l in names(language)) {
+  message(l)
+  current <- language[[l]]
+  
+  # format the date in local names
+  Sys.setlocale("LC_TIME", current$locale_lc_time)
+  
+  p3 <- co2ml %>% 
+    filter(vdate == "2015-01-01") %>% 
+    mutate(vdate = ymd("2015-12-31"),
+           year = year -1) %>% 
+    bind_rows(co2ml) %>% 
+    ggplot(aes(vdate, co2_interpol, group = year, color = year)) +
+      geom_line(size = 1.2) +
+      scale_x_date(breaks = pretty_breaks(12), labels = date_format("%b")) +
+      scale_color_viridis_c() +
+      labs(subtitle = current$title,
+           x = "",
+           y = current$y,
+           color = current$x,
+           title = paste("Mauna Loa", min(co2ml$year), "-", max(co2ml$year)),
+           caption = current$caption) +
+      coord_polar() +
+      theme_bw() +
+      theme(axis.title.y = element_text(hjust = .85),
+            panel.grid.major.y  = element_blank(),
+            panel.grid.minor.x = element_blank(),
+            panel.border = element_blank(),
+            plot.caption = element_text(size = 7))
+  
+  ggsave(p3, file = paste("co2_mauna_loa_polar", l, Sys.Date(), "wp.svg", sep = "_"), width = 20, height = 20, units = "cm", device = svg)
+}
